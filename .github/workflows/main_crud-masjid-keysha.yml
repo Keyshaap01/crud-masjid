@@ -1,5 +1,9 @@
 # Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
 # More GitHub Actions for Azure: https://github.com/Azure/actions
+#
+# Deploy memakai Publish Profile (tanpa azure/login / OIDC).
+# Secret yang dibutuhkan di repo crud-masjid:
+#   AZURE_PUBLISH_PROFILE = seluruh isi file publish profile dari Azure Portal
 
 name: Build and deploy PHP app to Azure Web App - crud-masjid-keysha
 
@@ -33,32 +37,28 @@ jobs:
         if: steps.check_files.outputs.files_exists == 'true'
         run: composer validate --no-check-publish && composer install --prefer-dist --no-progress
 
-
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
           name: php-app
-          path: .
+          path: |
+            .
+            !.git
+            !.github
+            !.env
 
   deploy:
     runs-on: ubuntu-latest
     needs: build
-    permissions:
-      id-token: write #This is required for requesting the JWT
-      contents: read #This is required for actions/checkout
+    environment:
+      name: 'Production'
+      url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
 
     steps:
       - name: Download artifact from build job
         uses: actions/download-artifact@v4
         with:
           name: php-app
-      
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_EEC3C95DA91C4DE193AF13A316EE985D }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_2CE667547DC54D2C80D1CA3046B980BD }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_21091EE5B53F40ECA10B919ED7F54847 }}
 
       - name: 'Deploy to Azure Web App'
         uses: azure/webapps-deploy@v3
@@ -67,4 +67,4 @@ jobs:
           app-name: 'crud-masjid-keysha'
           slot-name: 'Production'
           package: .
-          
+          publish-profile: ${{ secrets.AZURE_PUBLISH_PROFILE }}
