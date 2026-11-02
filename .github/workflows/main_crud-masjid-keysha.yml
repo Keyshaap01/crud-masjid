@@ -4,6 +4,9 @@
 # Deploy memakai Publish Profile (tanpa azure/login / OIDC).
 # Secret yang dibutuhkan di repo crud-masjid:
 #   AZURE_PUBLISH_PROFILE = seluruh isi file publish profile dari Azure Portal
+#
+# Workflow ini otomatis mencari folder yang berisi index.php,
+# jadi tetap jalan walaupun project berada di subfolder repo.
 
 name: Build and deploy PHP app to Azure Web App - crud-masjid-keysha
 
@@ -27,25 +30,41 @@ jobs:
         with:
           php-version: '8.4'
 
+      - name: Cari folder aplikasi (yang berisi index.php)
+        id: app
+        run: |
+          FILE=$(find . -name index.php -not -path './.git/*' -not -path '*/admin/*' -not -path '*/vendor/*' \
+                 | awk '{ print gsub("/", "/"), $0 }' | sort -n | head -1 | cut -d' ' -f2-)
+          if [ -z "$FILE" ]; then
+            echo "::error::index.php tidak ditemukan di repository"
+            exit 1
+          fi
+          DIR=$(dirname "$FILE")
+          echo "Folder aplikasi: $DIR"
+          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+          ls -la "$DIR"
+
       - name: Check if composer.json exists
         id: check_files
         uses: andstor/file-existence-action@v1
         with:
-          files: 'composer.json'
+          files: '${{ steps.app.outputs.dir }}/composer.json'
 
       - name: Run composer install if composer.json exists
         if: steps.check_files.outputs.files_exists == 'true'
+        working-directory: ${{ steps.app.outputs.dir }}
         run: composer validate --no-check-publish && composer install --prefer-dist --no-progress
 
+      - name: Cek sintaks PHP
+        working-directory: ${{ steps.app.outputs.dir }}
+        run: find . -name "*.php" -not -path './vendor/*' -print0 | xargs -0 -n1 php -l
+
+      # File tersembunyi (.env, .git, .github) otomatis tidak ikut di-upload
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
           name: php-app
-          path: |
-            .
-            !.git
-            !.github
-            !.env
+          path: ${{ steps.app.outputs.dir }}
 
   deploy:
     runs-on: ubuntu-latest
@@ -59,6 +78,9 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: php-app
+
+      - name: Tampilkan isi yang akan di-deploy
+        run: ls -la
 
       - name: 'Deploy to Azure Web App'
         uses: azure/webapps-deploy@v3
